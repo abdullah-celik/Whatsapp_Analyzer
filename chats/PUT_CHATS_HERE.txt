@@ -1,0 +1,3 @@
+Put your exported WhatsApp chats (.txt or .zip) in this folder.
+Run from the project folder:
+  python3 -m wa_analyzer "chats/WhatsApp Chat with NAME.zip" --open

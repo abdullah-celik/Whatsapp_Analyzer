@@ -1,0 +1,17 @@
+# Private data: never commit chats, reports or exported tables
+chats/*
+!chats/PUT_CHATS_HERE.txt
+*.zip
+*_report.html
+*.csv
+WhatsApp Chat*
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Generated test data
+tests/fake_chats/
