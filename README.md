@@ -105,3 +105,4 @@ PYTHONPATH=.:tests python -m pytest tests
 
 The fake chats cover Android and iPhone exports, 12- and 24-hour clocks, day/month and month/day order, dotted and ISO dates, group system messages, multi-line and edited messages, deleted messages and media.
 # Whatsapp_Analyzer
+# Whatsapp_Analyzer
