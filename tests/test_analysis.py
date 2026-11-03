@@ -28,3 +28,31 @@ def test_conversation_logic():
     assert p.loc["Ann", "left_without_answer"] == 3
     assert p.loc["Bob", "median_response_min"] == 5
     assert p.loc["Ann", "median_response_min"] == 1.5
+
+
+def test_daily_streaks():
+    m = A.prepare(parse_text(RAW), A.Settings())
+    # both wrote on 1 + 2 March; only Ann on 3 + 4 March
+    both = A.daily_streaks(m, min_people=2)
+    assert both.longest["days"] == 2
+    assert both.longest["start"].day == 1 and both.longest["end"].day == 2
+    assert both.current == 0  # Bob did not write on the last day
+    anyone = A.daily_streaks(m, min_people=1)
+    assert anyone.longest["days"] == 4 and anyone.current == 4
+    assert anyone.span_days == 4
+    assert both.per_person.loc["Ann", "longest streak (days)"] == 4
+    assert both.per_person.loc["Bob", "longest streak (days)"] == 2
+
+
+def test_daily_streaks_gap():
+    raw = """01/03/2025, 10:00 - Ann: hi
+01/03/2025, 10:01 - Bob: hi
+02/03/2025, 23:59 - Ann: late
+03/03/2025, 00:01 - Bob: early
+05/03/2025, 10:00 - Ann: back
+05/03/2025, 10:05 - Bob: yes
+"""
+    st = A.daily_streaks(A.prepare(parse_text(raw), A.Settings()), 2)
+    # 2 March only Ann, 3 March only Bob -> neither counts; 4 March silent
+    assert list(st.runs["days"]) == [1, 1]
+    assert st.current == 1

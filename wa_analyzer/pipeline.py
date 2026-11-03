@@ -40,6 +40,7 @@ class Results:
     turns: pd.DataFrame = None
     convs: pd.DataFrame = None
     summary: pd.DataFrame = None
+    streaks: A.Streaks = None
     people: list[str] = field(default_factory=list)
     people_all: list[str] = field(default_factory=list)
     is_group: bool = False
@@ -103,6 +104,8 @@ def analyze(df: pd.DataFrame, title: str, s: A.Settings | None = None, o: Option
     r.people = r.people_all[:o.max_people]
     r.is_group = len(r.people_all) > 2
     r.colors = {p: PALETTE[i % len(PALETTE)] for i, p in enumerate(r.people_all)}
+
+    step("Daily streaks", lambda: setattr(r, "streaks", A.daily_streaks(r.m, s.streak_min_people)))
 
     def words():
         clf = I.WordClassifier(o.lexicon)

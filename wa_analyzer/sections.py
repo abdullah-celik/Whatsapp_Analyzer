@@ -101,7 +101,7 @@ def _rgba(hex_color: str, a: float) -> str:
 # ------------------------------------------------------------------ sections
 
 def build_sections(r: Results) -> list[Section]:
-    out = [key_findings(r), overview(r), activity(r), response_times(r)]
+    out = [key_findings(r), overview(r), activity(r), streaks(r), response_times(r)]
     out.append(survival(r))
     out.append(interest(r))
     out.append(statistics(r))
@@ -136,6 +136,13 @@ def key_findings(r: Results) -> Section:
     st = summ["conversations_started"]
     if st.sum() > 0:
         f.append(f"<b>{esc(st.idxmax())}</b> starts most conversations ({st.max() / st.sum() * 100:.0f}%).")
+    if r.streaks is not None and r.streaks.longest is not None:
+        lg = r.streaks.longest
+        txt = (f"Longest streak: <b>{int(lg['days'])} days</b> in a row ({_period(lg['start'], lg['end'])}) "
+               f"on which {_streak_rule(r.streaks, r.is_group)}")
+        if r.streaks.current:
+            txt += f"; the current streak is <b>{r.streaks.current} days</b>"
+        f.append(txt + ".")
     if r.score is not None:
         fair = 100 / len(people)
         lead = r.score.idxmax()
@@ -199,6 +206,105 @@ def activity(r: Results) -> Section:
     f4 = px.imshow(hm.values, x=list(hm.columns), y=[str(i) for i in hm.index], color_continuous_scale="Blues",
                    aspect="auto", labels=dict(x="hour", y="", color="messages"), title="Activity heatmap (all people)")
     return Section("activity", "Activity", "Who writes, and when", "", [Fig(f1), Grid([Fig(f2), Fig(f3)]), Fig(f4, 320)])
+
+
+def _period(start, end) -> str:
+    start, end = pd.Timestamp(start), pd.Timestamp(end)
+    return f"{start:%d %b %Y}" if start == end else f"{start:%d %b %Y} – {end:%d %b %Y}"
+
+
+def _streak_rule(st, is_group: bool) -> str:
+    if st.min_people == 1:
+        return "anyone wrote"
+    return f"at least {st.min_people} people wrote" if is_group else "both of you wrote"
+
+
+def _tile(value: str, label: str, sub: str = "") -> str:
+    sub = f"<div style='color:#8c959f;font-size:12px'>{sub}</div>" if sub else ""
+    return (f"<div style='border:1px solid #eaeef2;border-radius:10px;padding:10px 14px'>"
+            f"<div style='font-size:26px;font-weight:600;color:#075e54'>{value}</div>"
+            f"<div style='font-size:14px'>{label}</div>{sub}</div>")
+
+
+def streaks(r: Results) -> Section | None:
+    st = r.streaks
+    if st is None or st.longest is None:
+        return None
+    top, span = st.longest, st.span_days
+    n_talked = len(st.talked_days)
+    cur_sub = "still going at the end of the export" if st.current else f"nobody talked on {st.last_day:%d %b %Y}"
+    tiles = "".join([
+        _tile(f"{int(top['days'])} days", "Longest streak", _period(top["start"], top["end"])),
+        _tile(f"{st.current} days", "Current streak", cur_sub),
+        _tile(f"{n_talked:,} / {span:,}", "Days talked", f"{n_talked / span * 100:.0f}% of the chat's days"),
+        _tile(f"{int((st.runs['days'] >= 7).sum())}", "Streaks of a week or more"),
+    ])
+    blocks = [Html("<div style='display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;"
+                   f"margin-bottom:8px'>{tiles}</div>")]
+
+    # calendar: one column per week, one row per weekday
+    days = pd.date_range(st.first_day, st.last_day, freq="D")
+    writers = r.m.groupby("date")["author"].unique()
+    talked = set(st.talked_days)
+    # categories: (label, colour); one-sided days get the colour of the person who wrote
+    cats = [("no messages", "#ebedf0"), (f"talked ({_streak_rule(st, r.is_group)})", "#075e54")]
+    cat_of = {}
+
+    def category(label, color):
+        if label not in cat_of:
+            cat_of[label] = len(cats)
+            cats.append((label, color))
+        return cat_of[label]
+
+    level, detail = [], []
+    for d in days:
+        who = list(writers.get(d, []))
+        if d in talked:
+            level.append(1)
+            detail.append("talked: " + ", ".join(who))
+        elif not who:
+            level.append(0)
+            detail.append("no messages")
+        elif len(who) == 1:
+            p = who[0]
+            level.append(category(f"only {p}" if p in r.people else "only someone else",
+                                  r.colors[p] if p in r.people else "#9aa4ae"))
+            detail.append(f"only {who[0]} wrote")
+        else:  # group chat with streak_min_people > 2: several wrote, but too few
+            level.append(category("too few people", "#d6c08f"))
+            detail.append("only " + ", ".join(who) + " wrote")
+    n = len(cats)
+    week = days - pd.to_timedelta(days.weekday, unit="D")
+    cal = pd.DataFrame({"week": week, "weekday": days.weekday, "level": level,
+                        "hover": [f"{d:%a %d %b %Y}: {t}" for d, t in zip(days, detail)]})
+    z = cal.pivot(index="weekday", columns="week", values="level").reindex(range(7))
+    hover = cal.pivot(index="weekday", columns="week", values="hover").reindex(range(7)).fillna("")
+    scale = []
+    for i, (_, color) in enumerate(cats):
+        scale += [[i / n, color], [(i + 1) / n, color]]
+    fig = go.Figure(go.Heatmap(
+        z=z.values, x=list(z.columns), y=[d[:3] for d in A.WEEKDAYS], text=hover.values, hoverinfo="text",
+        colorscale=scale, zmin=-0.5, zmax=n - 0.5, showscale=False, xgap=2, ygap=2, showlegend=False))
+    for label, color in cats:  # heatmaps have no legend: add one marker per category
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", name=label,
+                                 marker=dict(symbol="square", size=12, color=color)))
+    fig.update_yaxes(autorange="reversed")
+    fig.update_layout(title="Every day of the chat (hover a day to see who wrote)")
+    blocks.append(Fig(fig, 300))
+
+    tb = st.runs.head(10).copy()
+    tb.index = range(1, len(tb) + 1)
+    tb.index.name = "#"
+    tb = tb.rename(columns={"start": "From", "end": "To", "days": "Days in a row"})[["Days in a row", "From", "To"]]
+    tables = [Html("<h3>Longest streaks</h3>"), Table(tb)]
+    if r.is_group or st.min_people > 1:
+        tables += [Html("<h3>Each person: longest run of days they wrote</h3>"),
+                   Table(st.per_person.reindex([p for p in r.people if p in st.per_person.index]))]
+    blocks += tables
+    return Section("streaks", "Activity", "Daily streaks",
+                   f"A streak is a run of consecutive calendar days on which {_streak_rule(st, r.is_group)} "
+                   f"(change with <code>--streak-min-people</code>). Days are cut at midnight; the current streak is "
+                   f"measured against the last day of the export ({st.last_day:%d %b %Y}).", blocks)
 
 
 def response_times(r: Results) -> Section:

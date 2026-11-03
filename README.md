@@ -47,6 +47,7 @@ Writes `giulia_report.html` next to the chat. If AI results exist in `giulia_ai/
 | `--since 2025-01-01 --until 2025-06-30` | only this period |
 | `--exclude "Meta AI"` | leave people/bots out |
 | `--gap-hours 6` | silence that starts a new conversation |
+| `--streak-min-people 2` | a day counts for the daily streak when this many people wrote (1 = any message) |
 | `--no-stats` | skip the statistical models (faster) |
 | `--bootstrap 1000` | samples for confidence intervals |
 | `--predict-hours 1` | prediction target: answered within N hours |
