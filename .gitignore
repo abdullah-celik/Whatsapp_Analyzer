@@ -18,3 +18,8 @@ __pycache__/
 
 # Generated test data
 tests/fake_chats/
+
+# never commit chat exports
+*.txt
+!requirements*.txt
+!chats/PUT_CHATS_HERE.txt
