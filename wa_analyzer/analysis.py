@@ -28,6 +28,7 @@ class Settings:
     late_reply_hours: float = 36.0
     followup_minutes: float = 30.0
     quick_reply_minutes: float = 5.0
+    streak_min_people: int = 2       # a day counts for a streak when at least this many people wrote
 
 
 WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
@@ -147,6 +148,62 @@ def reply_matrix(turns: pd.DataFrame) -> pd.DataFrame:
 def reply_time_matrix(turns: pd.DataFrame) -> pd.DataFrame:
     r = turns[turns["prev_author"].notna()]
     return r.pivot_table(index="author", columns="prev_author", values="response_min", aggfunc="median").round(1)
+
+
+def _runs(days: pd.DatetimeIndex) -> pd.DataFrame:
+    """Runs of consecutive calendar days: one row per run with start, end, days (longest first)."""
+    if len(days) == 0:
+        return pd.DataFrame(columns=["start", "end", "days"])
+    days = pd.DatetimeIndex(sorted(set(days)))
+    run_id = (days.to_series().diff() != pd.Timedelta(days=1)).cumsum().values
+    runs = pd.DataFrame({"day": days, "run": run_id}).groupby("run")["day"].agg(start="min", end="max", days="size")
+    return runs.sort_values(["days", "end"], ascending=[False, False]).reset_index(drop=True)
+
+
+@dataclass
+class Streaks:
+    min_people: int
+    runs: pd.DataFrame              # every streak: start, end, days (longest first)
+    talked_days: pd.DatetimeIndex   # days that count
+    first_day: pd.Timestamp         # first and last day of the chat
+    last_day: pd.Timestamp
+    per_person: pd.DataFrame        # longest run of days each person wrote
+
+    @property
+    def longest(self) -> pd.Series | None:
+        return None if self.runs.empty else self.runs.iloc[0]
+
+    @property
+    def current(self) -> int:
+        """Streak that reaches the last day of the export (0 if nobody talked that day)."""
+        hit = self.runs[self.runs["end"] == self.last_day]
+        return int(hit["days"].iloc[0]) if len(hit) else 0
+
+    @property
+    def span_days(self) -> int:
+        return (self.last_day - self.first_day).days + 1
+
+
+def daily_streaks(m: pd.DataFrame, min_people: int = 2) -> Streaks:
+    """Consecutive calendar days on which at least `min_people` different people wrote.
+
+    With 2 people and min_people=2 a day only counts when both wrote; capped at the number of people,
+    so a chat with a single author still gets streaks."""
+    n_people = m["author"].nunique()
+    need = max(1, min(min_people, n_people))
+    per_day = m.groupby("date")["author"].nunique()
+    talked = pd.DatetimeIndex(per_day.index[per_day >= need])
+    pp = []
+    for person, g in m.groupby("author"):
+        r = _runs(pd.DatetimeIndex(g["date"].unique()))
+        if not r.empty:
+            top = r.iloc[0]
+            pp.append({"person": person, "longest streak (days)": int(top["days"]),
+                       "from": top["start"], "to": top["end"], "days written": int(g["date"].nunique())})
+    per_person = pd.DataFrame(pp).set_index("person").sort_values("longest streak (days)", ascending=False) if pp \
+        else pd.DataFrame()
+    return Streaks(min_people=need, runs=_runs(talked), talked_days=talked,
+                   first_day=m["date"].min(), last_day=m["date"].max(), per_person=per_person)
 
 
 def activity_tables(m: pd.DataFrame) -> dict[str, pd.DataFrame]:

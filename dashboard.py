@@ -129,6 +129,8 @@ with st.sidebar.expander("Settings", expanded=False):
     followup = st.slider("Follow-up after (minutes without answer)", 5, 180, 30, 5)
     late = st.slider("Late reply window (hours)", 6, 72, 36, 2)
     quick = st.slider("Quick reply limit (minutes)", 1, 30, 5, 1)
+    streak_n = st.number_input("Streak day: at least this many people wrote", 1, 50, 2, 1,
+                               help="2 = both of you wrote that day; 1 = any message counts")
     run_stats = st.checkbox("Statistical models", value=True,
                             help="Confidence intervals, survival model, change points, Hawkes, style, prediction, network")
     boot = st.select_slider("Bootstrap samples", [200, 500, 1000, 2000], value=1000)
@@ -139,7 +141,7 @@ ai_dir = default_ai_dir(path)
 use_ai = st.sidebar.checkbox(f"Include AI results ({ai_dir.name})", value=ai_dir.exists(), disabled=not ai_dir.exists(),
                              help="Create them in the 'Run local AI' panel below or with python -m wa_analyzer.ai")
 
-settings_t = (gap, float(late), float(followup), float(quick))
+settings_t = (gap, float(late), float(followup), float(quick), int(streak_n))
 options_t = tuple(sorted({"stats": run_stats, "bootstrap": int(boot), "predict_hours": float(pred_h),
                           "survival_cap_hours": float(cap), "ai_dir": str(ai_dir) if use_ai else None}.items()))
 

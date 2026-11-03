@@ -22,6 +22,8 @@ def main(argv=None):
                    help="answer to an unanswered message within this time counts as a late reply, not a new start (default 36)")
     p.add_argument("--followup-minutes", type=float, default=30.0,
                    help="writing again after this long with no answer counts as a follow-up (default 30)")
+    p.add_argument("--streak-min-people", type=int, default=2,
+                   help="a day counts for a streak when at least this many people wrote (default 2 = both; 1 = any message)")
     p.add_argument("--date-order", choices=["DMY", "MDY", "YMD"], help="force date order if auto-detection is wrong")
     p.add_argument("--since", help="only use messages from this date (YYYY-MM-DD)")
     p.add_argument("--until", help="only use messages up to this date (YYYY-MM-DD)")
@@ -70,7 +72,17 @@ def main(argv=None):
         df.to_csv(a.csv, index=False)
         print(f"Saved messages to {a.csv}")
 
-    s = Settings(gap_hours=a.gap_hours, late_reply_hours=a.late_reply_hours, followup_minutes=a.followup_minutes)
+    s = Settings(gap_hours=a.gap_hours, late_reply_hours=a.late_reply_hours, followup_minutes=a.followup_minutes,
+                 streak_min_people=a.streak_min_people)
+    if people.sum():
+        from .analysis import daily_streaks, prepare
+        sk = daily_streaks(prepare(df, s), s.streak_min_people)
+        if sk.longest is not None:
+            lg = sk.longest
+            print(f"Longest streak: {int(lg['days'])} days ({lg['start']:%d %b %Y} – {lg['end']:%d %b %Y}) · "
+                  f"current: {sk.current} days")
+        else:
+            print("No streak: there is no day on which enough people wrote")
     title = a.title or chat.stem.replace("WhatsApp Chat with ", "").replace("_", " ")
     out = Path(a.output or chat.with_name(chat.stem + "_report.html"))
     ai_dir = None if a.no_ai else (a.ai_dir or (str(default_ai_dir(chat)) if default_ai_dir(chat).exists() else None))
