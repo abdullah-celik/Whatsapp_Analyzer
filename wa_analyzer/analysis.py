@@ -66,6 +66,7 @@ def build_turns(m: pd.DataFrame) -> pd.DataFrame:
         n_msgs=("text", "size"),
         words=("words", "sum"),
         has_question=("is_question", "any"),
+        has_media=("is_media", "any"),
     ).reset_index()
     prev_same_conv = t["conv_id"] == t["conv_id"].shift()
     t["prev_author"] = t["author"].shift().where(prev_same_conv)

@@ -1,0 +1,5 @@
+# local AI (install PyTorch first: see setup_cpu.sh / setup_gpu.sh)
+transformers>=4.40
+sentence-transformers>=3.0
+sentencepiece
+protobuf
