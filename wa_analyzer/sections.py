@@ -244,23 +244,53 @@ def streaks(r: Results) -> Section | None:
 
     # calendar: one column per week, one row per weekday
     days = pd.date_range(st.first_day, st.last_day, freq="D")
-    wrote = set(r.m["date"].unique())
+    writers = r.m.groupby("date")["author"].unique()
     talked = set(st.talked_days)
-    level = [2 if d in talked else 1 if d in wrote else 0 for d in days]
+    # categories: (label, colour); one-sided days get the colour of the person who wrote
+    cats = [("no messages", "#ebedf0"), (f"talked ({_streak_rule(st, r.is_group)})", "#075e54")]
+    cat_of = {}
+
+    def category(label, color):
+        if label not in cat_of:
+            cat_of[label] = len(cats)
+            cats.append((label, color))
+        return cat_of[label]
+
+    level, detail = [], []
+    for d in days:
+        who = list(writers.get(d, []))
+        if d in talked:
+            level.append(1)
+            detail.append("talked: " + ", ".join(who))
+        elif not who:
+            level.append(0)
+            detail.append("no messages")
+        elif len(who) == 1:
+            p = who[0]
+            level.append(category(f"only {p}" if p in r.people else "only someone else",
+                                  r.colors[p] if p in r.people else "#9aa4ae"))
+            detail.append(f"only {who[0]} wrote")
+        else:  # group chat with streak_min_people > 2: several wrote, but too few
+            level.append(category("too few people", "#d6c08f"))
+            detail.append("only " + ", ".join(who) + " wrote")
+    n = len(cats)
     week = days - pd.to_timedelta(days.weekday, unit="D")
-    cal = pd.DataFrame({"week": week, "weekday": days.weekday, "level": level, "day": days})
+    cal = pd.DataFrame({"week": week, "weekday": days.weekday, "level": level,
+                        "hover": [f"{d:%a %d %b %Y}: {t}" for d, t in zip(days, detail)]})
     z = cal.pivot(index="weekday", columns="week", values="level").reindex(range(7))
-    text = cal.pivot(index="weekday", columns="week", values="day").reindex(range(7))
-    meaning = {0: "no messages", 1: "messages, but not a streak day", 2: "talked"}
-    hover = [[f"{pd.Timestamp(d):%a %d %b %Y}: {meaning[int(v)]}" if pd.notna(d) else "" for d, v in zip(tr, zr)]
-             for tr, zr in zip(text.values, z.fillna(0).values)]
+    hover = cal.pivot(index="weekday", columns="week", values="hover").reindex(range(7)).fillna("")
+    scale = []
+    for i, (_, color) in enumerate(cats):
+        scale += [[i / n, color], [(i + 1) / n, color]]
     fig = go.Figure(go.Heatmap(
-        z=z.values, x=list(z.columns), y=[d[:3] for d in A.WEEKDAYS], text=hover, hoverinfo="text",
-        colorscale=[[0, "#ebedf0"], [0.33, "#ebedf0"], [0.34, "#f2c48d"], [0.66, "#f2c48d"], [0.67, "#1d9a6c"], [1, "#1d9a6c"]],
-        zmin=0, zmax=2, showscale=False, xgap=2, ygap=2))
+        z=z.values, x=list(z.columns), y=[d[:3] for d in A.WEEKDAYS], text=hover.values, hoverinfo="text",
+        colorscale=scale, zmin=-0.5, zmax=n - 0.5, showscale=False, xgap=2, ygap=2, showlegend=False))
+    for label, color in cats:  # heatmaps have no legend: add one marker per category
+        fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers", name=label,
+                                 marker=dict(symbol="square", size=12, color=color)))
     fig.update_yaxes(autorange="reversed")
-    fig.update_layout(title="Every day of the chat (green = talked, orange = only one-sided, grey = silence)")
-    blocks.append(Fig(fig, 260))
+    fig.update_layout(title="Every day of the chat (hover a day to see who wrote)")
+    blocks.append(Fig(fig, 300))
 
     tb = st.runs.head(10).copy()
     tb.index = range(1, len(tb) + 1)
